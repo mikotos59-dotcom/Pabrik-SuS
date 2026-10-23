@@ -1,7 +1,7 @@
 {
   "name": "pabrik-sus",
-  "version": "0.1.0",
-  "description": "Rakit exe & installer dari ZIP kode sumber, tanpa login",
+  "version": "0.1.1",
+  "description": "Rakit exe & installer dari arsip kode sumber, tanpa login",
   "main": "main.js",
   "scripts": {
     "setup": "node scripts/setup.js",
@@ -13,6 +13,7 @@
   "author": "@SuS_X_x",
   "license": "MIT",
   "dependencies": {
+    "7z-wasm": "^1.2.0",
     "adm-zip": "^0.6.1"
   },
   "devDependencies": {
@@ -56,6 +57,9 @@
       "artifactName": "PabrikSuS-Setup-${version}.${ext}",
       "shortcutName": "Pabrik SuS"
     },
-    "artifactName": "PabrikSuS-${version}-${os}-${arch}.${ext}"
+    "artifactName": "PabrikSuS-${version}-${os}-${arch}.${ext}",
+    "asarUnpack": [
+      "node_modules/7z-wasm/**"
+    ]
   }
 }

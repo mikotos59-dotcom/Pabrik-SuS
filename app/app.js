@@ -100,9 +100,9 @@ ps.on((ev) => {
 async function renderHome() {
   view.slug = null;
   main.innerHTML = `<div class="wrap">
-    <div class="page-head"><div><h1>Proyek</h1><p>Seret ZIP kode sumber ke sini, lalu klik Bangun. Hasilnya Setup.exe dan/atau zip portable.</p></div>
+    <div class="page-head"><div><h1>Proyek</h1><p>Seret arsip kode sumber (.zip, .7z, .rar) ke sini, lalu klik Bangun. Hasilnya Setup.exe dan/atau zip portable.</p></div>
       <button class="btn primary" id="add">${I.plus}Tambah kode sumber</button></div>
-    <div class="drop" id="drop">${I.factory}<span>Seret ZIP kode sumber ke sini. Proyek yang sudah ada otomatis diperbarui: file berubah ditimpa, file yang hilang dihapus.</span></div>
+    <div class="drop" id="drop">${I.factory}<span>Seret arsip kode sumber (.zip, .7z, .rar) ke sini. Proyek yang sudah ada otomatis diperbarui: file berubah ditimpa, file yang hilang dihapus.</span></div>
     <div id="list"><div class="waiting"><span class="dot"></span>Memuat…</div></div>
     <p class="foot-note" id="where"></p>
   </div>`;
@@ -112,7 +112,7 @@ async function renderHome() {
   if (!info || view.slug) return;
   $("#where").innerHTML = `Lokasi pabrik: <span class="mono">${esc(info.root)}</span>${info.shared ? ' <span class="badge ok">gudang bersama RilisKu</span>' : ""}`;
   if (!info.projects.length) {
-    $("#list").innerHTML = `<div class="empty"><h2>Belum ada proyek</h2><p>Minta kode sumber aplikasi dalam bentuk ZIP (biasanya cuma ratusan KB), lalu seret ke kotak di atas.<br>Mendukung aplikasi <b>Electron</b> dan <b>Python</b>.</p></div>`;
+    $("#list").innerHTML = `<div class="empty"><h2>Belum ada proyek</h2><p>Minta kode sumber aplikasi dalam bentuk arsip .zip, .7z, atau .rar (biasanya cuma ratusan KB), lalu seret ke kotak di atas.<br>Mendukung aplikasi <b>Electron</b> dan <b>Python</b>.</p></div>`;
     return;
   }
   $("#list").innerHTML = `<div class="list">${info.projects.map((p) => {
@@ -131,13 +131,27 @@ async function renderHome() {
   $$(".row").forEach((b) => (b.onclick = () => openProject(b.dataset.slug)));
 }
 
-async function importSource(p) {
+// current: proyek yang sedang dibuka (kalau arsip ternyata proyek lain, beri tahu)
+async function importSource(p, current = null) {
+  if (!p) return;
+  if (!/\.(zip|7z|rar)$/i.test(p)) { toast("Pakai arsip kode sumber: .zip, .7z, atau .rar.", true); return; }
   try {
     const r = await ps.importZip(p);
     const s = r.stats;
-    toast(r.isNew ? `${r.project.name} ditambahkan (${r.project.files} file)` : `${r.project.name} diperbarui: ${s.added} baru, ${s.updated} diubah, ${s.removed} dihapus`, false, 4000);
+    closeModal();
+    if (current && r.project.slug !== current.slug) toast(`Arsip ini berisi proyek lain (${r.project.name}), jadi ditambahkan sebagai proyek terpisah.`, false, 5000);
+    else if (!r.isNew && !s.added && !s.updated && !s.removed) toast(`${r.project.name}: kode sumber sama persis, tidak ada yang berubah.`, false, 4000);
+    else toast(r.isNew ? `${r.project.name} ditambahkan (${r.project.files} file)` : `${r.project.name} diperbarui: ${s.added} baru, ${s.updated} diubah, ${s.removed} dihapus`, false, 4000);
     openProject(r.project.slug);
   } catch (e) { toast(e.message, true); }
+}
+
+function openUpdateSource(st) {
+  const box = openModal(`<div class="modal-head"><div><h2>Perbarui kode sumber</h2><p>${esc(st.name)}${st.version ? " v" + esc(st.version) : ""} · File yang berubah ditimpa, file yang hilang dihapus. Paket dan hasil build lama tetap disimpan.</p></div><button class="x" data-close aria-label="Tutup">${I.x}</button></div>
+    <div class="drop big" id="upDrop">${I.factory}<div><b>Seret arsip kode sumber versi baru ke sini</b><div class="muted" style="font-size:13px;margin-top:4px">.zip, .7z, atau .rar</div></div></div>
+    <div style="display:flex;justify-content:center;gap:8px;margin-top:12px"><button class="btn primary" id="upPick">${I.folder}Cari file</button><button class="btn" data-close>Batal</button></div>`);
+  dropZone($("#upDrop", box), (paths) => importSource(paths[0], st));
+  $("#upPick", box).onclick = async () => { const p = await ps.pickZip(); if (p) importSource(p, st); };
 }
 
 // ---------- Halaman proyek ----------
@@ -194,7 +208,8 @@ async function openProject(slug) {
     </div>
   </div>`;
   $("#back").onclick = renderHome;
-  $("#upd").onclick = async () => { const p = await ps.pickZip(); if (p) importSource(p); };
+  $("#upd").onclick = () => openUpdateSource(st);
+  dropZone($(".wrap", main), (paths) => importSource(paths[0], st));
   $("#code").onclick = () => ps.open(st.workspace);
   $("#del").onclick = async () => {
     if (!(await confirmBox(`Hapus ${st.name} dari pabrik?`, "Folder kerja (kode, paket, dan hasil build) dihapus. Gudang bahan tidak ikut terhapus.", "Hapus", true))) return;

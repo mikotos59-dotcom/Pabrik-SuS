@@ -148,3 +148,7 @@ main { flex: 1; overflow-y: auto; padding: 28px 32px 60px; }
 .toast.err { background: var(--red); color: #2a0606; }
 
 @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } main { padding: 22px 18px 50px; } }
+
+.drop.big { flex-direction: column; padding: 40px 22px; margin-bottom: 0; }
+.drop.big svg { width: 38px; height: 38px; }
+.wrap.over { outline: 2px dashed var(--orange); outline-offset: 8px; border-radius: 12px; }

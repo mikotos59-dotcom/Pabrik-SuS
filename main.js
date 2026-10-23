@@ -80,13 +80,13 @@ function register() {
     return settings.root;
   });
   handle("pick-zip", async () => {
-    const r = await dialog.showOpenDialog(win, { title: "Pilih ZIP kode sumber", properties: ["openFile"], filters: [{ name: "ZIP kode sumber", extensions: ["zip"] }] });
+    const r = await dialog.showOpenDialog(win, { title: "Pilih arsip kode sumber", properties: ["openFile"], filters: [{ name: "Arsip kode sumber (.zip, .7z, .rar)", extensions: ["zip", "7z", "rar"] }] });
     return r.canceled ? null : r.filePaths[0] || null;
   });
-  handle("import", (zip) => {
+  handle("import", async (zip) => {
     if (job) throw new Error("Tunggu build yang sedang berjalan selesai dulu.");
-    if (!/\.zip$/i.test(zip || "") || !fs.existsSync(zip)) throw new Error("Pilih file .zip kode sumber.");
-    const r = proyek.importZip(root(), zip);
+    if (!/\.(zip|7z|rar)$/i.test(zip || "") || !fs.existsSync(zip)) throw new Error("Pilih arsip kode sumber: .zip, .7z, atau .rar.");
+    const r = await proyek.importArchive(root(), zip);
     return { project: slim(r.project), stats: r.stats, isNew: r.isNew };
   });
   handle("project", (slug) => slim(proyek.load(root(), slug)));
