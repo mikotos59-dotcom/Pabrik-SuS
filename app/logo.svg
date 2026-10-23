@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- pabrik bergerigi: atap gergaji, cerobong, dan roda gigi oranye -->
+  <path fill="#c9d3df" d="M3 28V14l6 4v-4l6 4v-4l6 4V5h4v23z"/>
+  <path fill="#151a21" d="M6 22h3v3H6zm6 0h3v3h-3z"/>
+  <g transform="translate(23 22)">
+    <path fill="#ff9a3c" d="M-1.2-6h2.4l.5 1.9 1.7.7 1.7-1 1.7 1.7-1 1.7.7 1.7 1.9.5v2.4l-1.9.5-.7 1.7 1 1.7-1.7 1.7-1.7-1-1.7.7-.5 1.9h-2.4l-.5-1.9-1.7-.7-1.7 1-1.7-1.7 1-1.7-.7-1.7-1.9-.5v-2.4l1.9-.5.7-1.7-1-1.7 1.7-1.7 1.7 1 1.7-.7z"/>
+    <circle r="2" fill="#151a21"/>
+  </g>
+</svg>

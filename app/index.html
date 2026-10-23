@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'">
+<title>Pabrik SuS</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="tape" aria-hidden="true"></div>
+<header class="top">
+  <button class="brand" id="home"><img src="logo.svg" alt="" width="32" height="32"><span>Pabrik SuS</span></button>
+  <div class="top-act">
+    <button class="btn" id="bahanBtn">Gudang bahan</button>
+    <button class="btn" id="setBtn">Pengaturan</button>
+  </div>
+</header>
+<main id="main"></main>
+<div id="modal" class="modal" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
