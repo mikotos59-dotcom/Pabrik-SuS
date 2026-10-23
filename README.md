@@ -43,3 +43,7 @@ npm run build:win
 ```
 
 Mesin pabrik ada di `lib/pabrik/` dan sama persis dengan yang di RilisKu.
+
+## Catatan rilis otomatis
+
+Tulis perubahan tiap versi di `CATATAN-RILIS.md` (bagian `## <versi>`, terbaru di atas). Saat membuat rilis, catatan untuk versi itu dan daftar file unduhan terisi otomatis dan tetap bisa diubah.

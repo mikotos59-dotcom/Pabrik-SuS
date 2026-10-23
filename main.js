@@ -5,8 +5,8 @@ const path = require("path");
 const bahan = require("./lib/pabrik/bahan");
 const proyek = require("./lib/pabrik/proyek");
 const resep = require("./lib/pabrik/resep");
-const kunci = require("./lib/pabrik/kunci");
-const { Pekerjaan } = require("./lib/pabrik/jalankan");
+const { Antrean } = require("./lib/pabrik/antrean");
+const catatan = require("./lib/pabrik/catatan");
 
 const APP = "Pabrik SuS";
 app.setName(APP);
@@ -41,9 +41,11 @@ function createWindow() {
   win.webContents.on("will-navigate", (e, url) => { e.preventDefault(); if (/^https?:/.test(url)) shell.openExternal(url); });
   win.webContents.on("before-input-event", (e, i) => { if (i.type === "keyDown" && i.key === "I" && i.control && i.shift) win.webContents.toggleDevTools(); });
   win.on("close", (e) => {
-    if (!job) return;
-    const r = dialog.showMessageBoxSync(win, { type: "warning", buttons: ["Tetap di sini", "Hentikan build & tutup"], defaultId: 0, cancelId: 0, title: "Build sedang berjalan", message: "Pabrik masih membangun aplikasi. Tutup sekarang dan hentikan build?" });
-    if (r === 0) e.preventDefault(); else job.cancel();
+    if (!antrean || !antrean.busy) return;
+    const n = antrean.state().queue.length;
+    const r = dialog.showMessageBoxSync(win, { type: "warning", buttons: ["Tetap di sini", "Hentikan build & tutup"], defaultId: 0, cancelId: 0, title: "Build sedang berjalan",
+      message: `Pabrik masih bekerja${n ? ` (${n} proyek menunggu di antrean)` : ""}. Tutup sekarang dan hentikan semuanya?` });
+    if (r === 0) e.preventDefault(); else antrean.cancelAll();
   });
 }
 const send = (ch, ...a) => { if (win && !win.isDestroyed()) win.webContents.send(ch, ...a); };
@@ -69,9 +71,10 @@ function parseRepo(s) {
   return `${m[1]}/${m[2]}`;
 }
 
-let job = null, jobSlug = null;
+let antrean = null;
 function register() {
-  handle("info", () => ({ root: root(), shared: root() === rilisKuRoot(), projects: proyek.list(root()).map(slim), building: jobSlug, version: app.getVersion() }));
+  antrean = new Antrean({ root, appName: APP, emit: (ev) => send("event", ev) });
+  handle("info", () => ({ root: root(), shared: root() === rilisKuRoot(), projects: proyek.list(root()).map(slim), version: app.getVersion(), ...antrean.state() }));
   handle("pick-root", async () => {
     const r = await dialog.showOpenDialog(win, { title: "Pilih folder untuk Pabrik (bahan & proyek)", defaultPath: root(), properties: ["openDirectory", "createDirectory"] });
     if (r.canceled || !r.filePaths[0]) return null;
@@ -84,9 +87,8 @@ function register() {
     return r.canceled ? null : r.filePaths[0] || null;
   });
   handle("import", async (zip) => {
-    if (job) throw new Error("Tunggu build yang sedang berjalan selesai dulu.");
     if (!/\.(zip|7z|rar)$/i.test(zip || "") || !fs.existsSync(zip)) throw new Error("Pilih arsip kode sumber: .zip, .7z, atau .rar.");
-    const r = await proyek.importArchive(root(), zip);
+    const r = await proyek.importArchive(root(), zip, { busy: (slug) => antrean.state().building === slug });
     return { project: slim(r.project), stats: r.stats, isNew: r.isNew };
   });
   handle("project", (slug) => slim(proyek.load(root(), slug)));
@@ -97,24 +99,13 @@ function register() {
     if (proyek.scriptsToReview(root(), st).hash !== hash) throw new Error("Skrip berubah sejak ditinjau. Tinjau ulang.");
     st.trusted = hash; proyek.save(root(), st); return true;
   });
-  handle("build", async (slug, opts) => {
-    if (job) throw new Error("Sudah ada build yang berjalan.");
-    const r0 = root();
-    const st = proyek.load(r0, slug);
-    if (!st) throw new Error("Proyek tidak ditemukan.");
-    if (!proyek.scriptsToReview(r0, st).trusted) throw new Error("Tinjau dan setujui skrip proyek ini dulu.");
-    const release = kunci.acquire(r0, APP, st.name);
-    jobSlug = slug;
-    job = new Pekerjaan((ev) => send("event", { slug, ...ev }));
-    try {
-      const r = await resep.build(job, r0, st, opts || {});
-      return { outputs: r.outputs, skipped: r.skipped, project: slim(proyek.load(r0, slug)) };
-    } finally { job = null; jobSlug = null; release(); }
-  });
-  handle("cancel", () => { if (job) job.cancel(); });
+  // Masuk antrean; dimulai langsung kalau pabrik sedang kosong. Hasil dikirim lewat event "done" / "error".
+  handle("build", (slug, opts) => antrean.add(slug, opts || {}));
+  handle("unqueue", (slug) => antrean.remove(slug));
+  handle("cancel", () => antrean.cancel());
   handle("bahan", () => bahan.inventory(root()));
-  handle("bahan-clean", (key) => { if (job) throw new Error("Tunggu build selesai dulu."); return bahan.clean(root(), key); });
-  handle("remove", (slug) => { if (jobSlug === slug) throw new Error("Proyek ini sedang dibangun."); proyek.remove(root(), slug); return true; });
+  handle("bahan-clean", (key) => { if (antrean.busy) throw new Error("Tunggu build selesai dulu."); return bahan.clean(root(), key); });
+  handle("remove", (slug) => { if (antrean.state().building === slug) throw new Error("Proyek ini sedang dibangun."); antrean.remove(slug); proyek.remove(root(), slug); return true; });
   handle("set-repo", (slug, repo) => { const st = proyek.load(root(), slug); st.repo = parseRepo(repo); proyek.save(root(), st); return slim(st); });
   handle("release-page", (slug) => {
     const st = proyek.load(root(), slug);
@@ -122,7 +113,16 @@ function register() {
     const ver = st.version ? `v${st.version}` : "";
     const q = new URLSearchParams();
     if (ver) { q.set("tag", ver); q.set("title", `${st.name} ${st.version}`); }
-    shell.openExternal(`https://github.com/${st.repo}/releases/new${ver ? "?" + q.toString() : ""}`);
+    // catatan rilis otomatis: CATATAN-RILIS.md dari kode sumber + daftar file hasil build
+    const kode = proyek.paths(root(), slug).kode;
+    let text = null;
+    for (const n of catatan.NOTE_FILES) { try { text = fs.readFileSync(path.join(kode, n), "utf8"); break; } catch {} }
+    const names = st.lastBuild && st.lastBuild.ok ? st.lastBuild.outputs.filter((o) => o.kind !== "folder").map((o) => ({ name: path.basename(o.path), kind: o.kind })) : [];
+    let body = catatan.compose(text, st.version, names);
+    if (body.length > 6000) body = body.slice(0, 6000) + "\n…";
+    if (body) q.set("body", body);
+    const qs = q.toString();
+    shell.openExternal(`https://github.com/${st.repo}/releases/new${qs ? "?" + qs : ""}`);
     // folder hasil ikut dibuka supaya file tinggal diseret ke halaman GitHub
     const first = st.lastBuild && st.lastBuild.ok && st.lastBuild.outputs.find((o) => o.kind !== "folder");
     if (first && fs.existsSync(first.path)) shell.showItemInFolder(first.path);

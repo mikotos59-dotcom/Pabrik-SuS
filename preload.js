@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("ps", {
   trust: call("trust"),
   build: call("build"),
   cancel: call("cancel"),
+  unqueue: call("unqueue"),
   bahan: call("bahan"),
   cleanBahan: call("bahan-clean"),
   remove: call("remove"),

@@ -87,8 +87,39 @@ function confirmBox(title, text, okLabel = "Ya", danger = false) {
 // ---------- Status build (tetap tersimpan saat pindah halaman) ----------
 const run = { slug: null, steps: [], status: {}, notes: {}, progress: {}, logs: [], error: null, outputs: null, skipped: false, icon: null, started: 0, finished: false, finishedAt: 0 };
 const view = { slug: null, plan: [], outputs: null };
+const antre = { building: null, current: null, waiting: null, queue: [] }; // antrean build dari proses utama
+const posOf = (slug) => (antre.queue.find((q) => q.slug === slug) || {}).pos || 0;
+const setAntre = (x) => Object.assign(antre, { building: x.building, current: x.current, waiting: x.waiting, queue: x.queue || [] });
+let listCache = null;
 ps.on((ev) => {
+  if (ev.type === "queue") {
+    setAntre(ev);
+    if (!view.slug && $("#list") && listCache) drawList();
+    else if (view.slug) drawRun();
+    return;
+  }
+  if (ev.type === "start") {
+    Object.assign(run, { slug: ev.slug, steps: view.slug === ev.slug ? view.plan : [], status: {}, notes: {}, progress: {}, logs: [], error: null, outputs: null, skipped: false, icon: null, started: Date.now(), finished: false, finishedAt: 0 });
+    if (view.slug === ev.slug) { $("#log").textContent = ""; drawRun(); }
+    return;
+  }
   if (ev.slug !== run.slug) return;
+  if (ev.type === "done" || ev.type === "error") {
+    run.finished = true; run.finishedAt = Date.now();
+    if (ev.type === "done") {
+      run.outputs = ev.outputs; run.skipped = ev.skipped; run.icon = ev.icon;
+      toast(ev.skipped ? `${ev.name}: tidak ada perubahan, memakai hasil sebelumnya` : `${ev.name} selesai dibangun`);
+    } else {
+      run.error = ev.error;
+      if (view.slug === ev.slug && !ev.cancelled) toggleLog(true);
+      toast(ev.cancelled ? `Build ${ev.name} dihentikan` : `${ev.name}: ${ev.error}`, !ev.cancelled);
+    }
+    if (view.slug === ev.slug) {
+      if (ev.type === "done") { view.outputs = ev.outputs; ps.project(ev.slug).then((p) => { if (view.slug === ev.slug) { view.project = p; drawOutputs(); } }).catch(() => {}); }
+      drawRun();
+    } else if (!view.slug && $("#list")) ps.info().then((i) => { listCache = i.projects; drawList(); }).catch(() => {});
+    return;
+  }
   if (ev.type === "plan") run.steps = ev.steps;
   if (ev.type === "step") { run.status[ev.id] = ev.status; if (ev.note !== undefined) run.notes[ev.id] = ev.note; }
   if (ev.type === "progress") run.progress[ev.step] = ev;
@@ -111,13 +142,30 @@ async function renderHome() {
   const info = await attempt(() => ps.info());
   if (!info || view.slug) return;
   $("#where").innerHTML = `Lokasi pabrik: <span class="mono">${esc(info.root)}</span>${info.shared ? ' <span class="badge ok">gudang bersama RilisKu</span>' : ""}`;
-  if (!info.projects.length) {
-    $("#list").innerHTML = `<div class="empty"><h2>Belum ada proyek</h2><p>Minta kode sumber aplikasi dalam bentuk arsip .zip, .7z, atau .rar (biasanya cuma ratusan KB), lalu seret ke kotak di atas.<br>Mendukung aplikasi <b>Electron</b> dan <b>Python</b>.</p></div>`;
+  setAntre(info);
+  listCache = info.projects;
+  drawList();
+}
+
+function queueBanner() {
+  if (!antre.current && !antre.queue.length && !antre.waiting) return "";
+  return `<div class="queue">
+    ${antre.current ? `<div><span class="dot"></span><b>Sedang dibangun:</b> ${esc(antre.current.name)}</div>` : ""}
+    ${antre.waiting ? `<div class="muted">${esc(antre.waiting)}</div>` : ""}
+    ${antre.queue.length ? `<div><b>Antrean:</b> ${antre.queue.map((q) => `<span class="q">${q.pos}. ${esc(q.name)} <button class="x" data-unq="${esc(q.slug)}" title="Keluarkan dari antrean" aria-label="Keluarkan ${esc(q.name)} dari antrean">${I.x}</button></span>`).join("")}</div>` : ""}
+  </div>`;
+}
+function drawList() {
+  const box = $("#list");
+  if (!box || !listCache) return;
+  if (!listCache.length) {
+    box.innerHTML = `<div class="empty"><h2>Belum ada proyek</h2><p>Minta kode sumber aplikasi dalam bentuk arsip .zip, .7z, atau .rar (biasanya cuma ratusan KB), lalu seret ke kotak di atas.<br>Mendukung aplikasi <b>Electron</b> dan <b>Python</b>.</p></div>`;
     return;
   }
-  $("#list").innerHTML = `<div class="list">${info.projects.map((p) => {
+  box.innerHTML = queueBanner() + `<div class="list">${listCache.map((p) => {
     const lb = p.lastBuild;
-    const st = info.building === p.slug ? `<span class="st-busy">Sedang dibangun…</span>`
+    const st = antre.building === p.slug ? `<span class="st-busy">Sedang dibangun…</span>`
+      : posOf(p.slug) ? `<span class="st-busy">Menunggu di antrean (urutan ${posOf(p.slug)})</span>`
       : !lb ? "Belum pernah dibangun"
       : lb.ok ? `<span class="st-ok">Berhasil ${ago(lb.at)} · ${lb.outputs.length} hasil</span>`
       : `<span class="st-fail">Gagal ${ago(lb.at)}</span>`;
@@ -128,7 +176,8 @@ async function renderHome() {
       <span class="side">kode diperbarui ${ago(p.imported)}</span>
     </button>`;
   }).join("")}</div>`;
-  $$(".row").forEach((b) => (b.onclick = () => openProject(b.dataset.slug)));
+  $$(".row", box).forEach((b) => (b.onclick = () => openProject(b.dataset.slug)));
+  $$("[data-unq]", box).forEach((b) => (b.onclick = () => attempt(() => ps.unqueue(b.dataset.unq), "Dikeluarkan dari antrean")));
 }
 
 // current: proyek yang sedang dibuka (kalau arsip ternyata proyek lain, beri tahu)
@@ -199,6 +248,7 @@ async function openProject(slug) {
         <label class="check"><input type="checkbox" id="force"><span>Paksa bangun ulang semua<br><span class="muted" style="font-size:13px">Pasang ulang paket walau tidak berubah.</span></span></label>
         <button class="btn primary" id="go" style="justify-content:center;padding:12px">${I.factory}Bangun</button>
         <button class="btn danger" id="stop" hidden style="justify-content:center">${I.stop}Hentikan</button>
+        <div class="wait" id="wait" hidden></div>
         ${lb && lb.ok ? `<p class="muted" style="margin:0;font-size:13px">Build terakhir berhasil ${ago(lb.at)}${lb.durationMs && !lb.skipped ? ` dalam ${dur(lb.durationMs)}` : ""}.</p>` : ""}
         <hr style="border:0;border-top:1px solid var(--line);margin:4px 0">
         <h3>Repo GitHub (opsional)</h3>
@@ -218,6 +268,7 @@ async function openProject(slug) {
   $$('input[name="t"]').forEach((r) => (r.onchange = () => localStorage.setItem("opts-" + slug, JSON.stringify({ targets: r.value }))));
   $("#go").onclick = () => startBuild(slug);
   $("#stop").onclick = () => ps.cancel();
+  try { setAntre(await ps.info()); } catch {}
   $("#logT").onclick = () => toggleLog();
   $("#logC").onclick = () => { ps.copy(run.logs.map((l) => l.text).join("\n")); toast("Log disalin"); };
   $("#repoSave").onclick = async () => {
@@ -259,8 +310,18 @@ function drawRun() {
       ${note || prLine ? `<span class="sub">${esc(prLine || note)}</span>` : ""}
       ${pr && st === "doing" && pr.total ? `<span class="bar"><i style="width:${(pr.got / pr.total) * 100}%"></i></span>` : ""}</li>`;
   }).join("");
-  $("#go").hidden = active; $("#stop").hidden = !active;
-  $("#time").textContent = active ? "berjalan…" : mine && run.finishedAt ? `selesai dalam ${dur(run.finishedAt - run.started)}` : "";
+  const building = antre.building === view.slug;
+  const pos = posOf(view.slug);
+  $("#go").hidden = building || !!pos; $("#stop").hidden = !building;
+  $("#go").innerHTML = antre.building || antre.queue.length ? `${I.factory}Masukkan antrean` : `${I.factory}Bangun`;
+  const w = $("#wait");
+  w.hidden = !pos;
+  if (pos) {
+    w.innerHTML = `<b>Menunggu di antrean · urutan ${pos}</b><span class="muted">${antre.waiting ? esc(antre.waiting) : antre.current ? `Mulai otomatis setelah ${esc(antre.current.name)}${pos > 1 ? ` dan ${pos - 1} proyek lain` : ""} selesai.` : "Segera dimulai…"}</span>
+      <button class="btn small" id="unq">Keluarkan dari antrean</button>`;
+    $("#unq").onclick = () => attempt(() => ps.unqueue(view.slug), "Dikeluarkan dari antrean");
+  }
+  $("#time").textContent = active ? "berjalan…" : pos ? "menunggu giliran" : building ? "menyiapkan…" : mine && run.finishedAt ? `selesai dalam ${dur(run.finishedAt - run.started)}` : "";
   if (mine && run.icon) $("#icon").innerHTML = `<img src="${run.icon}" alt="">`;
   drawOutputs();
 }
@@ -313,23 +374,10 @@ function toggleLog(force) {
 async function startBuild(slug) {
   const targets = ($('input[name="t"]:checked') || {}).value || "both";
   const force = $("#force") && $("#force").checked;
-  Object.assign(run, { slug, steps: view.plan, status: {}, notes: {}, progress: {}, logs: [], error: null, outputs: null, skipped: false, icon: null, started: Date.now(), finished: false, finishedAt: 0 });
-  $("#log").textContent = "";
-  drawRun();
   try {
     const r = await ps.build(slug, { targets, force });
-    run.outputs = r.outputs; run.skipped = r.skipped; run.icon = r.project && r.project.icon;
-    if (view.slug === slug) { view.outputs = r.outputs; view.project = r.project; }
-    toast(r.skipped ? "Tidak ada perubahan, memakai hasil sebelumnya" : "Build selesai");
-  } catch (e) {
-    run.error = e.message;
-    const cancelled = /Dibatalkan/.test(e.message);
-    if (view.slug === slug && !cancelled) toggleLog(true);
-    toast(cancelled ? "Build dihentikan" : e.message, !cancelled);
-  } finally {
-    run.finished = true; run.finishedAt = Date.now();
-    if (view.slug === slug) drawRun();
-  }
+    if (r.pos) toast(`Masuk antrean, urutan ${r.pos}. Build mulai otomatis saat giliran tiba.`, false, 4500);
+  } catch (e) { toast(e.message, true); }
 }
 
 // ---------- Gudang bahan & pengaturan ----------

@@ -1,6 +1,6 @@
 {
   "name": "pabrik-sus",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "Rakit exe & installer dari arsip kode sumber, tanpa login",
   "main": "main.js",
   "scripts": {
